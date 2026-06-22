@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Control Horario</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#15233B; --paper:#F4F3EE; --card:#FFFFFF;
+    --green:#198C66; --green-d:#0F6E50; --clay:#C75A33;
+    --muted:#7A8190; --line:#E7E5DD;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{font-family:'Inter',system-ui,sans-serif;background:var(--paper);color:var(--ink);
+       min-height:100vh;display:flex;justify-content:center}
+  .app{width:100%;max-width:440px;min-height:100vh;background:var(--paper);display:flex;flex-direction:column}
+  .topbar{padding:18px 20px;display:flex;align-items:center;justify-content:space-between}
+  .topbar .brand{font-weight:800;font-size:18px;letter-spacing:-.3px}
+  .topbar .out{font-size:13px;color:var(--muted);font-weight:600;background:none;border:none;cursor:pointer}
+  .pad{padding:8px 20px 32px;flex:1}
+  h1{font-size:24px;font-weight:800;letter-spacing:-.4px;margin-bottom:4px}
+  .sub{font-size:14px;color:var(--muted);font-weight:500;margin-bottom:20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;margin-bottom:14px}
+  label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}
+  input{width:100%;border:1.5px solid var(--line);background:#fff;border-radius:12px;padding:13px;
+        font-family:inherit;font-size:16px;font-weight:500;color:var(--ink);margin-bottom:14px}
+  input:focus{outline:none;border-color:var(--ink)}
+  .btn{width:100%;border:none;border-radius:14px;background:var(--ink);color:#fff;font-family:inherit;
+       font-weight:800;font-size:16px;padding:15px;cursor:pointer}
+  .btn:active{transform:scale(.99)}
+  .btn.ghost{background:none;color:var(--ink);border:1.5px solid var(--line);margin-top:8px}
+  .btn.green{background:linear-gradient(180deg,var(--green),var(--green-d))}
+  .btn:disabled{opacity:.5;cursor:wait}
+  .row{display:flex;gap:10px}
+  .row > div{flex:1}
+  .msg{font-size:13.5px;font-weight:600;padding:10px 0;min-height:20px}
+  .msg.err{color:var(--clay)}
+  .msg.ok{color:var(--green-d)}
+  .emp{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;
+       margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+  .emp .n{font-weight:700;font-size:16px}
+  .emp .t{font-size:13px;color:var(--muted);margin-top:2px}
+  .hide{display:none}
+  .geo{font-size:13px;color:var(--green-d);font-weight:700;background:#EAF5F0;border:none;
+       border-radius:10px;padding:11px;width:100%;cursor:pointer;margin-bottom:14px}
+  .geo.set{background:#EAF5F0;color:var(--green-d)}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <span class="brand">Control Horario</span>
+    <button class="out hide" id="btnOut" onclick="logout()">Salir</button>
+  </div>
+
+  <!-- ===== LOGIN ===== -->
+  <div class="pad hide" id="viewAuth">
+    <h1>Ingresar</h1>
+    <div class="sub">Entrá con tu email para administrar.</div>
+    <div class="card">
+      <label>Email</label>
+      <input id="email" type="email" placeholder="tu@email.com" autocomplete="email">
+      <label>Contraseña</label>
+      <input id="pass" type="password" placeholder="••••••••" autocomplete="current-password">
+      <button class="btn" id="btnLogin" onclick="login()">Entrar</button>
+      <button class="btn ghost" onclick="signup()">Crear cuenta</button>
+      <div class="msg" id="authMsg"></div>
+    </div>
+  </div>
+
+  <!-- ===== PANEL (logged in) ===== -->
+  <div class="pad hide" id="viewHome">
+    <h1>Tus empleadas</h1>
+    <div class="sub">Configurá tarifa y ubicación de la casa.</div>
+    <div id="empList"></div>
+
+    <div class="card" style="margin-top:8px">
+      <div style="font-weight:800;margin-bottom:14px">Agregar empleada</div>
+      <label>Nombre</label>
+      <input id="nNombre" type="text" placeholder="ej. María">
+      <div class="row">
+        <div>
+          <label>Precio por hora</label>
+          <input id="nPrecio" type="number" inputmode="decimal" placeholder="0">
+        </div>
+        <div>
+          <label>Viático por día</label>
+          <input id="nViatico" type="number" inputmode="decimal" placeholder="0">
+        </div>
+      </div>
+      <button class="geo" id="btnGeo" onclick="capturarCasa()">📍 Usar mi ubicación actual como “la casa”</button>
+      <button class="btn green" id="btnAdd" onclick="addEmpleada()">Guardar empleada</button>
+      <div class="msg" id="homeMsg"></div>
+    </div>
+  </div>
+
+</div>
+
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+const SUPABASE_URL = 'https://ubxewgzsxsgbnteilsmr.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_GBcT8LGAtJjcXKH8u6yYfQ_HCEpdhzh';
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let casaLat = null, casaLng = null;
+let currentUser = null;
+
+const $ = id => document.getElementById(id);
+const show = (auth) => {
+  $('viewAuth').classList.toggle('hide', !auth);
+  $('viewHome').classList.toggle('hide', auth);
+  $('btnOut').classList.toggle('hide', auth);
+  const brand = document.querySelector('.brand');
+  brand.textContent = (auth && currentUser) ? ('Hola, '+currentUser.email.split('@')[0]) : 'Control Horario';
+  if(auth) cargarEmpleadas();
+};
+const msg = (el, text, ok) => { const m=$(el); m.textContent=text; m.className='msg '+(ok?'ok':'err'); };
+
+// La fuente de verdad de la sesión: se actualiza sola en login/logout
+sb.auth.onAuthStateChange((_event, session) => {
+  currentUser = session?.user || null;
+  const brand = document.querySelector('.brand');
+  brand.textContent = currentUser ? ('Hola, '+currentUser.email.split('@')[0]) : 'Control Horario';
+  show(!!currentUser);
+});
+
+// ---- AUTH ----
+window.login = async () => {
+  $('btnLogin').disabled = true;
+  const { data, error } = await sb.auth.signInWithPassword({ email:$('email').value.trim(), password:$('pass').value });
+  $('btnLogin').disabled = false;
+  if(error){ msg('authMsg', traducir(error.message)); return; }
+  currentUser = data.user;          // por las dudas, además del listener
+  show(true);
+};
+window.signup = async () => {
+  const email=$('email').value.trim(), password=$('pass').value;
+  const { data, error } = await sb.auth.signUp({ email, password });
+  if(error){
+    // si ya existe la cuenta, intentamos entrar directamente
+    if(/already registered/i.test(error.message)){
+      msg('authMsg','Esa cuenta ya existe, entrando...', true);
+      const { data:d2, error:e2 } = await sb.auth.signInWithPassword({ email, password });
+      if(e2){ msg('authMsg','La cuenta ya existe pero la contraseña no coincide. Probá de nuevo con la correcta.'); return; }
+      currentUser=d2.user; show(true); return;
+    }
+    msg('authMsg', traducir(error.message)); return;
+  }
+  if(data.session){ currentUser = data.user; show(true); }
+  else msg('authMsg','Cuenta creada. Ahora tocá Entrar.', true);
+};
+window.logout = async () => {
+  try { await sb.auth.signOut({ scope: 'local' }); } catch(e) {}
+  currentUser = null;
+  show(false);
+};
+
+// ---- UBICACIÓN ----
+window.capturarCasa = () => {
+  if(!navigator.geolocation){ msg('homeMsg','Tu dispositivo no permite ubicación.'); return; }
+  navigator.geolocation.getCurrentPosition(
+    p => { casaLat=p.coords.latitude; casaLng=p.coords.longitude;
+           const b=$('btnGeo'); b.classList.add('set'); b.textContent='✅ Ubicación de la casa guardada'; },
+    () => msg('homeMsg','No se pudo leer la ubicación (¿diste permiso?).')
+  );
+};
+
+// ---- EMPLEADAS ----
+window.addEmpleada = async () => {
+  const nombre=$('nNombre').value.trim();
+  const precio=parseFloat($('nPrecio').value);
+  const viatico=parseFloat($('nViatico').value)||0;
+  if(!nombre || isNaN(precio)){ msg('homeMsg','Completá nombre y precio por hora.'); return; }
+
+  // verificar sesión activa antes de escribir
+  const { data:{ user } } = await sb.auth.getUser();
+  if(!user){ msg('homeMsg','Tu sesión no está activa. Cerrá y volvé a Entrar (abrí el archivo en un navegador real).'); return; }
+
+  $('btnAdd').disabled=true;
+
+  const { data:emp, error:e1 } = await sb.from('empleadas')
+    .insert({ nombre, casa_lat:casaLat, casa_lng:casaLng, empleador_id:user.id }).select().single();
+  if(e1){ msg('homeMsg', traducir(e1.message)); $('btnAdd').disabled=false; return; }
+
+  const { error:e2 } = await sb.from('tarifas')
+    .insert({ empleada_id:emp.id, precio_hora:precio, viatico_dia:viatico, empleador_id:user.id });
+  if(e2){ msg('homeMsg', traducir(e2.message)); $('btnAdd').disabled=false; return; }
+
+  $('nNombre').value=''; $('nPrecio').value=''; $('nViatico').value='';
+  casaLat=casaLng=null; $('btnGeo').classList.remove('set'); $('btnGeo').textContent='📍 Usar mi ubicación actual como “la casa”';
+  $('btnAdd').disabled=false;
+  msg('homeMsg','Empleada agregada.', true);
+  cargarEmpleadas();
+};
+
+async function cargarEmpleadas(){
+  const { data, error } = await sb.from('empleadas')
+    .select('id,nombre,casa_lat,tarifas(precio_hora,viatico_dia,vigente_desde)')
+    .order('creada_en');
+  const list=$('empList');
+  if(error){ list.innerHTML=''; return; }
+  if(!data.length){ list.innerHTML='<div class="sub">Todavía no agregaste ninguna.</div>'; return; }
+  list.innerHTML = data.map(e=>{
+    const t=(e.tarifas||[]).sort((a,b)=>b.vigente_desde.localeCompare(a.vigente_desde))[0];
+    const tarifa = t ? `$${t.precio_hora}/h · viático $${t.viatico_dia}` : 'sin tarifa';
+    const casa = e.casa_lat ? ' · 📍 casa fijada' : ' · sin ubicación';
+    return `<div class="emp"><div><div class="n">${e.nombre}</div><div class="t">${tarifa}${casa}</div></div></div>`;
+  }).join('');
+}
+
+function traducir(m){
+  if(/Invalid login/i.test(m)) return 'Email o contraseña incorrectos.';
+  if(/already registered/i.test(m)) return 'Ese email ya tiene cuenta. Entrá normal.';
+  if(/Password should/i.test(m)) return 'La contraseña debe tener al menos 6 caracteres.';
+  if(/Email not confirmed/i.test(m)) return 'Confirmá tu email primero (revisá tu correo).';
+  return m;
+}
+
+// Al abrir: validamos la sesión guardada CONTRA EL SERVIDOR.
+// onAuthStateChange (arriba) ya se encarga de mostrar la pantalla correcta;
+// esto solo limpia una sesión vieja/inválida si el servidor la rechaza.
+// Va en try/catch a propósito: si esta llamada falla (red, file://, etc.)
+// no puede tirar abajo el resto del script y dejar la UI trabada.
+try {
+  const { data:{ user }, error } = await sb.auth.getUser();
+  if(!user || error){
+    await sb.auth.signOut({ scope:'local' });
+  }
+} catch(e) {
+  console.error('Chequeo de sesión falló:', e);
+  try { await sb.auth.signOut({ scope:'local' }); } catch(_) {}
+}
+</script>
+</body>
+</html>
