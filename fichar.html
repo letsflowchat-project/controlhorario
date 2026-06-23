@@ -113,7 +113,7 @@ async function obtenerUbicacion(){
     navigator.geolocation.getCurrentPosition(
       p => resolve({ lat:p.coords.latitude, lng:p.coords.longitude }),
       () => resolve(null),
-      { timeout:8000 }
+      { timeout:15000, enableHighAccuracy:true }
     );
   });
 }
@@ -124,13 +124,16 @@ async function fichar(){
   msg('Marcando…', true);
 
   const ubicacion = await obtenerUbicacion();
-  let lat=null, lng=null, enZona=null;
-  if(ubicacion){
-    lat = ubicacion.lat; lng = ubicacion.lng;
-    if(empleada.casa_lat != null && empleada.casa_lng != null){
-      const dist = distanciaMetros(lat, lng, empleada.casa_lat, empleada.casa_lng);
-      enZona = dist <= RADIO_ZONA_METROS;
-    }
+  if(!ubicacion){
+    btn.disabled = false;
+    msg('No pudimos acceder a tu ubicación. Activá el permiso de ubicación en el navegador y tocá el botón otra vez.');
+    return;
+  }
+  const lat = ubicacion.lat, lng = ubicacion.lng;
+  let enZona = null;
+  if(empleada.casa_lat != null && empleada.casa_lng != null){
+    const dist = distanciaMetros(lat, lng, empleada.casa_lat, empleada.casa_lng);
+    enZona = dist <= RADIO_ZONA_METROS;
   }
 
   const fichaje = { empleada_id: empleadaId, tipo: proximaAccion, lat, lng, en_zona: enZona };
