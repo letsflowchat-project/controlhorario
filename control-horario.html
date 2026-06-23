@@ -132,8 +132,10 @@ sb.auth.onAuthStateChange((_event, session) => {
 
 // ---- AUTH ----
 window.login = async () => {
+  const email=$('email').value.trim(), password=$('pass').value;
+  if(!email || !password){ msg('authMsg','Completá email y contraseña.'); return; }
   $('btnLogin').disabled = true;
-  const { data, error } = await sb.auth.signInWithPassword({ email:$('email').value.trim(), password:$('pass').value });
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
   $('btnLogin').disabled = false;
   if(error){ msg('authMsg', traducir(error.message)); return; }
   currentUser = data.user;          // por las dudas, además del listener
@@ -141,6 +143,7 @@ window.login = async () => {
 };
 window.signup = async () => {
   const email=$('email').value.trim(), password=$('pass').value;
+  if(!email || !password){ msg('authMsg','Completá email y contraseña.'); return; }
   const { data, error } = await sb.auth.signUp({ email, password });
   if(error){
     // si ya existe la cuenta, intentamos entrar directamente
