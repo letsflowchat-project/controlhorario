@@ -345,11 +345,31 @@ async function cargarEmpleadas(){
     return `<div class="emp"><div><div class="n">${e.nombre}</div><div class="t">${tarifa}${casa}</div></div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button class="linkBtn" onclick="verPanel('${e.id}','${e.nombre}')">📊 Ver panel</button>
+              <button class="linkBtn" onclick="cambiarTarifa('${e.id}', ${t ? t.precio_hora : 0}, ${t ? t.viatico_dia : 0})">💲 Cambiar tarifa</button>
               <button class="linkBtn" onclick="fijarUbicacion('${e.id}', this)">📍 Fijar ubicación</button>
               <button class="linkBtn" onclick="copiarLink('${e.id}', this)">🔗 Copiar link</button>
             </div></div>`;
   }).join('');
 }
+
+window.cambiarTarifa = async (id, precioActual, viaticoActual) => {
+  const precioStr = prompt('Nuevo precio por hora:', precioActual);
+  if(precioStr === null) return;
+  const viaticoStr = prompt('Nuevo viático por día:', viaticoActual);
+  if(viaticoStr === null) return;
+  const precio = parseFloat(precioStr), viatico = parseFloat(viaticoStr) || 0;
+  if(isNaN(precio)){ msg('homeMsg','Precio inválido.'); return; }
+
+  const { data:{ user } } = await sb.auth.getUser();
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone:'America/Argentina/Buenos_Aires' });
+  // Se inserta una tarifa nueva vigente desde hoy: los días ya trabajados
+  // quedan calculados con la tarifa vieja, no se recalculan retroactivamente.
+  const { error } = await sb.from('tarifas')
+    .insert({ empleada_id:id, precio_hora:precio, viatico_dia:viatico, vigente_desde:hoy, empleador_id:user.id });
+  if(error){ msg('homeMsg', traducir(error.message)); return; }
+  msg('homeMsg','Tarifa actualizada desde hoy.', true);
+  cargarEmpleadas();
+};
 
 window.fijarUbicacion = (id, btn) => {
   if(!navigator.geolocation){ msg('homeMsg','Tu dispositivo no permite ubicación.'); return; }
