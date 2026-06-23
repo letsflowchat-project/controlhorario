@@ -142,6 +142,7 @@
     <button class="linkBtn" id="btnToggleRango" onclick="toggleRangoPersonalizado()" style="margin-bottom:18px">📅 Usar fechas personalizadas</button>
 
     <div class="card" id="panelTotales"></div>
+    <button class="btn green" style="margin-bottom:14px" onclick="descargarResumen()">📄 Descargar resumen (recibo)</button>
 
     <div class="card" style="margin-top:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
@@ -477,6 +478,8 @@ async function cargarPanel(){
   const viaticoExtra = sumPorTipo('viatico');
   const saldo = montoTrabajo + viaticoExtra - adelantos - pagos;
 
+  ultimoResumen = { horasTotales, viaticoTotal, montoTrabajo, adelantos, pagos, viaticoExtra, saldo };
+
   ultimosMovs = movsMes;
   $('panelMovs').innerHTML = movsMes.length ? movsMes.map(m => `
     <div class="emp"><div>
@@ -501,7 +504,76 @@ async function cargarPanel(){
 }
 
 let ultimosMovs = [];
+let ultimoResumen = null;
 let editandoMovId = null;
+
+window.descargarResumen = () => {
+  if(!ultimoResumen){ msg('movMsg','Esperá a que cargue el panel.'); return; }
+  const nombre = $('panelNombre').textContent;
+  const periodo = usarRango
+    ? `${fechaCorta($('panelDesde').value+'T12:00:00')} al ${fechaCorta($('panelHasta').value+'T12:00:00')}`
+    : new Date($('panelMes').value+'-01T12:00:00').toLocaleDateString('es-AR', { month:'long', year:'numeric' });
+  const r = ultimoResumen;
+
+  const filasDias = ultimosJornadas.map(j => {
+    const horas = (new Date(j.salida.hora) - new Date(j.entrada.hora)) / 3600000;
+    const precio = Number(j.salida.precio_hora_aplicado) || 0;
+    const viatico = Number(j.salida.viatico_aplicado) || 0;
+    const monto = horas*precio + viatico;
+    const fueraZona = (j.entrada.en_zona === false || j.salida.en_zona === false);
+    return `<tr><td>${fechaCorta(j.entrada.hora)}${fueraZona ? ' ⚠️' : ''}</td><td>${horaCorta(j.entrada.hora)} – ${horaCorta(j.salida.hora)}</td>
+      <td>${horas.toFixed(1)}h</td><td>${plata(precio)}</td><td>${plata(viatico)}</td><td>${plata(monto)}</td></tr>`;
+  }).join('') || '<tr><td colspan="6">Sin días en el período.</td></tr>';
+
+  const filasMovs = ultimosMovs.length ? ultimosMovs.map(m => `
+    <tr><td>${m.fecha}</td><td>${({adelanto:'Adelanto',pago:'Pago',viatico:'Viático extra'})[m.tipo]}</td>
+    <td>${m.nota||''}</td><td>${plata(m.monto)}</td></tr>`).join('') : '<tr><td colspan="4">Sin movimientos en el período.</td></tr>';
+
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Resumen ${nombre}</title>
+  <style>
+    body{font-family:system-ui,Arial,sans-serif;color:#15233B;padding:32px;max-width:680px;margin:0 auto}
+    h1{font-size:20px;margin-bottom:2px}
+    .sub{color:#7A8190;font-size:13px;margin-bottom:24px}
+    table{width:100%;border-collapse:collapse;margin-bottom:24px;font-size:13px}
+    th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #E7E5DD}
+    th{color:#7A8190;font-weight:600}
+    h2{font-size:15px;margin:24px 0 8px}
+    .totales{width:100%;border-collapse:collapse;margin-bottom:8px}
+    .totales td{padding:4px 0;font-size:14px}
+    .totales td:last-child{text-align:right;font-weight:700}
+    .saldo{font-size:22px;font-weight:800;color:#0F6E50;text-align:right;margin-top:12px}
+    @media print{ body{padding:0} }
+  </style></head><body>
+    <h1>Resumen de liquidación — ${nombre}</h1>
+    <div class="sub">Período: ${periodo}</div>
+
+    <h2>Días trabajados</h2>
+    <table><thead><tr><th>Fecha</th><th>Horario</th><th>Horas</th><th>Precio/h</th><th>Viático</th><th>Monto</th></tr></thead>
+    <tbody>${filasDias}</tbody></table>
+
+    <h2>Movimientos</h2>
+    <table><thead><tr><th>Fecha</th><th>Tipo</th><th>Nota</th><th>Monto</th></tr></thead>
+    <tbody>${filasMovs}</tbody></table>
+
+    <h2>Cálculo</h2>
+    <table class="totales">
+      <tr><td>Horas trabajadas</td><td>${r.horasTotales.toFixed(1)}h</td></tr>
+      <tr><td>Viático (días trabajados)</td><td>${plata(r.viaticoTotal)}</td></tr>
+      <tr><td>Subtotal trabajo</td><td>${plata(r.montoTrabajo)}</td></tr>
+      <tr><td>Viático extra</td><td>${plata(r.viaticoExtra)}</td></tr>
+      <tr><td>Adelantos</td><td>-${plata(r.adelantos)}</td></tr>
+      <tr><td>Pagos</td><td>-${plata(r.pagos)}</td></tr>
+    </table>
+    <div class="saldo">Saldo a pagar: ${plata(r.saldo)}</div>
+
+    <script>window.onload = () => setTimeout(() => window.print(), 200);</script>
+  </body></html>`;
+
+  const w = window.open('', '_blank');
+  if(!w){ msg('movMsg','El navegador bloqueó la ventana. Permití pop-ups e intentá de nuevo.'); return; }
+  w.document.write(html);
+  w.document.close();
+};
 
 window.addMovimiento = async () => {
   const tipo = $('mTipo').value;
