@@ -101,6 +101,50 @@
     </div>
   </div>
 
+  <!-- ===== PANEL DE UNA EMPLEADA (días, totales, saldo) ===== -->
+  <div class="pad hide" id="viewPanel">
+    <button class="linkBtn" style="margin-bottom:14px" onclick="volverAHome()">← Volver</button>
+    <h1 id="panelNombre">—</h1>
+    <input type="month" id="panelMes" style="margin-bottom:18px">
+
+    <div class="card" id="panelTotales"></div>
+
+    <div class="card" style="margin-top:8px">
+      <div style="font-weight:800;margin-bottom:14px">Días trabajados</div>
+      <div id="panelDias"><div class="sub">Cargando…</div></div>
+    </div>
+
+    <div class="card" style="margin-top:8px">
+      <div style="font-weight:800;margin-bottom:14px">Movimientos del mes</div>
+      <div id="panelMovs"></div>
+    </div>
+
+    <div class="card" style="margin-top:8px">
+      <div style="font-weight:800;margin-bottom:14px">Cargar movimiento</div>
+      <label>Tipo</label>
+      <select id="mTipo" style="width:100%;border:1.5px solid var(--line);background:#fff;border-radius:12px;
+              padding:13px;font-family:inherit;font-size:16px;font-weight:500;color:var(--ink);margin-bottom:14px">
+        <option value="adelanto">Adelanto</option>
+        <option value="pago">Pago</option>
+        <option value="viatico">Viático extra</option>
+      </select>
+      <div class="row">
+        <div>
+          <label>Monto</label>
+          <input id="mMonto" type="number" inputmode="decimal" placeholder="0">
+        </div>
+        <div>
+          <label>Fecha</label>
+          <input id="mFecha" type="date">
+        </div>
+      </div>
+      <label>Nota (opcional)</label>
+      <input id="mNota" type="text" placeholder="ej. seña aguinaldo">
+      <button class="btn green" id="btnMov" onclick="addMovimiento()">Guardar movimiento</button>
+      <div class="msg" id="movMsg"></div>
+    </div>
+  </div>
+
 </div>
 
 <script type="module">
@@ -216,7 +260,8 @@ async function cargarEmpleadas(){
     const tarifa = t ? `$${t.precio_hora}/h · viático $${t.viatico_dia}` : 'sin tarifa';
     const casa = e.casa_lat ? ' · 📍 casa fijada' : ' · sin ubicación';
     return `<div class="emp"><div><div class="n">${e.nombre}</div><div class="t">${tarifa}${casa}</div></div>
-            <div style="display:flex;gap:6px">
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="linkBtn" onclick="verPanel('${e.id}','${e.nombre}')">📊 Ver panel</button>
               <button class="linkBtn" onclick="fijarUbicacion('${e.id}', this)">📍 Fijar ubicación</button>
               <button class="linkBtn" onclick="copiarLink('${e.id}', this)">🔗 Copiar link</button>
             </div></div>`;
@@ -248,6 +293,116 @@ window.copiarLink = (id, btn) => {
   const original = btn.textContent;
   btn.textContent = '✅ Copiado';
   setTimeout(()=>{ btn.textContent = original; }, 1500);
+};
+
+// ---- PANEL DE EMPLEADA (días, totales, saldo) ----
+const TZ = 'America/Argentina/Buenos_Aires';
+let panelEmpleadaId = null;
+
+const claveDiaAR = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: TZ }); // YYYY-MM-DD
+const fechaCorta = (iso) => new Date(iso).toLocaleDateString('es-AR', { timeZone: TZ, day:'2-digit', month:'2-digit' });
+const horaCorta  = (iso) => new Date(iso).toLocaleTimeString('es-AR', { timeZone: TZ, hour:'2-digit', minute:'2-digit' });
+const plata = (n) => '$' + Number(n).toLocaleString('es-AR', { minimumFractionDigits:0, maximumFractionDigits:2 });
+
+window.verPanel = (id, nombre) => {
+  panelEmpleadaId = id;
+  $('panelNombre').textContent = nombre;
+  $('viewHome').classList.add('hide');
+  $('viewPanel').classList.remove('hide');
+  const ahora = new Date().toLocaleDateString('en-CA', { timeZone: TZ }); // YYYY-MM-DD
+  $('panelMes').value = ahora.slice(0,7);
+  $('mFecha').value = ahora;
+  cargarPanel();
+};
+
+window.volverAHome = () => {
+  $('viewPanel').classList.add('hide');
+  $('viewHome').classList.remove('hide');
+  panelEmpleadaId = null;
+};
+
+$('panelMes').addEventListener('change', cargarPanel);
+
+async function cargarPanel(){
+  if(!panelEmpleadaId) return;
+  const mes = $('panelMes').value; // "2026-06"
+
+  const [{ data:fichajes, error:e1 }, { data:movs, error:e2 }] = await Promise.all([
+    sb.from('fichajes').select('*').eq('empleada_id', panelEmpleadaId).order('hora'),
+    sb.from('movimientos').select('*').eq('empleada_id', panelEmpleadaId).order('fecha')
+  ]);
+  if(e1 || e2){ $('panelDias').innerHTML = '<div class="sub">Error al cargar.</div>'; return; }
+
+  // Emparejar entrada/salida en jornadas
+  const jornadas = [];
+  let pendiente = null;
+  for(const f of fichajes){
+    if(f.tipo === 'entrada'){ pendiente = f; }
+    else if(f.tipo === 'salida' && pendiente){
+      jornadas.push({ entrada:pendiente, salida:f }); pendiente = null;
+    }
+  }
+  const abierta = pendiente; // jornada sin cerrar (trabajando ahora)
+
+  const jornadasMes = jornadas.filter(j => claveDiaAR(j.entrada.hora).startsWith(mes));
+  const movsMes = movs.filter(m => (m.fecha||'').startsWith(mes));
+
+  let horasTotales = 0, viaticoTotal = 0, montoTrabajo = 0;
+  const filasDias = jornadasMes.map(j => {
+    const horas = (new Date(j.salida.hora) - new Date(j.entrada.hora)) / 3600000;
+    const precio = Number(j.salida.precio_hora_aplicado) || 0;
+    const viatico = Number(j.salida.viatico_aplicado) || 0;
+    const monto = horas*precio + viatico;
+    horasTotales += horas; viaticoTotal += viatico; montoTrabajo += monto;
+    const fueraZona = (j.entrada.en_zona === false || j.salida.en_zona === false);
+    return `<div class="emp"><div>
+              <div class="n">${fechaCorta(j.entrada.hora)} ${fueraZona ? '🟡' : ''}</div>
+              <div class="t">${horaCorta(j.entrada.hora)} – ${horaCorta(j.salida.hora)} · ${horas.toFixed(1)}h · ${plata(monto)}</div>
+            </div></div>`;
+  }).join('') || '<div class="sub">Sin días en este mes.</div>';
+
+  $('panelDias').innerHTML = filasDias + (abierta ? `<div class="sub" style="margin-top:8px">🟢 Trabajando ahora desde las ${horaCorta(abierta.hora)}</div>` : '');
+
+  const sumPorTipo = (tipo) => movsMes.filter(m=>m.tipo===tipo).reduce((a,m)=>a+Number(m.monto),0);
+  const adelantos = sumPorTipo('adelanto');
+  const pagos = sumPorTipo('pago');
+  const viaticoExtra = sumPorTipo('viatico');
+  const saldo = montoTrabajo + viaticoExtra - adelantos - pagos;
+
+  $('panelMovs').innerHTML = movsMes.length ? movsMes.map(m => `
+    <div class="emp"><div>
+      <div class="n">${({adelanto:'Adelanto',pago:'Pago',viatico:'Viático extra'})[m.tipo]}</div>
+      <div class="t">${m.fecha} ${m.nota ? '· '+m.nota : ''}</div>
+    </div><div class="n">${plata(m.monto)}</div></div>
+  `).join('') : '<div class="sub">Sin movimientos este mes.</div>';
+
+  $('panelTotales').innerHTML = `
+    <div class="row"><div><label>Horas</label><div class="n" style="font-size:18px">${horasTotales.toFixed(1)}h</div></div>
+    <div><label>Viático</label><div class="n" style="font-size:18px">${plata(viaticoTotal)}</div></div></div>
+    <div class="row" style="margin-top:10px"><div><label>Adelantos</label><div class="n" style="font-size:18px">${plata(adelantos)}</div></div>
+    <div><label>Pagos</label><div class="n" style="font-size:18px">${plata(pagos)}</div></div></div>
+    <hr style="border:none;border-top:1px solid var(--line);margin:14px 0">
+    <label>Saldo a pagar</label><div style="font-size:26px;font-weight:800;color:var(--green-d)">${plata(saldo)}</div>
+  `;
+}
+
+window.addMovimiento = async () => {
+  const tipo = $('mTipo').value;
+  const monto = parseFloat($('mMonto').value);
+  const fecha = $('mFecha').value;
+  const nota = $('mNota').value.trim();
+  if(isNaN(monto) || !fecha){ msg('movMsg','Completá monto y fecha.'); return; }
+
+  const { data:{ user } } = await sb.auth.getUser();
+  $('btnMov').disabled = true;
+  const { error } = await sb.from('movimientos')
+    .insert({ empleada_id:panelEmpleadaId, empleador_id:user.id, tipo, monto, fecha, nota });
+  $('btnMov').disabled = false;
+  if(error){ msg('movMsg', traducir(error.message)); return; }
+
+  $('mMonto').value=''; $('mNota').value='';
+  msg('movMsg','Movimiento guardado.', true);
+  cargarPanel();
 };
 
 function traducir(m){
