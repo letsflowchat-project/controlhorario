@@ -113,9 +113,9 @@ let currentUser = null;
 
 const $ = id => document.getElementById(id);
 const show = (auth) => {
-  $('viewAuth').classList.toggle('hide', !auth);
-  $('viewHome').classList.toggle('hide', auth);
-  $('btnOut').classList.toggle('hide', auth);
+  $('viewAuth').classList.toggle('hide', auth);
+  $('viewHome').classList.toggle('hide', !auth);
+  $('btnOut').classList.toggle('hide', !auth);
   const brand = document.querySelector('.brand');
   brand.textContent = (auth && currentUser) ? ('Hola, '+currentUser.email.split('@')[0]) : 'Control Horario';
   if(auth) cargarEmpleadas();
