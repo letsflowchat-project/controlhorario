@@ -136,7 +136,7 @@ async function fichar(){
   const fichaje = { empleada_id: empleadaId, tipo: proximaAccion, lat, lng, en_zona: enZona };
 
   if(proximaAccion === 'salida'){
-    const hoy = new Date().toISOString().slice(0,10);
+    const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Argentina/Buenos_Aires' });
     const { data: tarifa } = await sb.from('tarifas')
       .select('precio_hora,viatico_dia')
       .eq('empleada_id', empleadaId)
@@ -145,7 +145,16 @@ async function fichar(){
       .limit(1).maybeSingle();
     if(tarifa){
       fichaje.precio_hora_aplicado = tarifa.precio_hora;
-      fichaje.viatico_aplicado = tarifa.viatico_dia;
+      // El viático es por día: si ya se estampó hoy en otra salida (ej. entrada/salida partida
+      // para almorzar), no se vuelve a sumar.
+      const { data: salidasHoy } = await sb.from('fichajes')
+        .select('hora,viatico_aplicado').eq('empleada_id', empleadaId).eq('tipo','salida')
+        .order('hora', { ascending:false }).limit(10);
+      const yaTieneViaticoHoy = (salidasHoy||[]).some(s =>
+        Number(s.viatico_aplicado) > 0 &&
+        new Date(s.hora).toLocaleDateString('en-CA', { timeZone:'America/Argentina/Buenos_Aires' }) === hoy
+      );
+      fichaje.viatico_aplicado = yaTieneViaticoHoy ? 0 : tarifa.viatico_dia;
     }
   }
 
