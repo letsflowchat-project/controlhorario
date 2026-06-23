@@ -43,6 +43,8 @@
        margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
   .emp .n{font-weight:700;font-size:16px}
   .emp .t{font-size:13px;color:var(--muted);margin-top:2px}
+  .linkBtn{font-size:12.5px;font-weight:700;color:var(--ink);background:var(--paper);
+       border:1px solid var(--line);border-radius:10px;padding:8px 10px;cursor:pointer;white-space:nowrap}
   .hide{display:none}
   .geo{font-size:13px;color:var(--green-d);font-weight:700;background:#EAF5F0;border:none;
        border-radius:10px;padding:11px;width:100%;cursor:pointer;margin-bottom:14px}
@@ -213,9 +215,19 @@ async function cargarEmpleadas(){
     const t=(e.tarifas||[]).sort((a,b)=>b.vigente_desde.localeCompare(a.vigente_desde))[0];
     const tarifa = t ? `$${t.precio_hora}/h · viático $${t.viatico_dia}` : 'sin tarifa';
     const casa = e.casa_lat ? ' · 📍 casa fijada' : ' · sin ubicación';
-    return `<div class="emp"><div><div class="n">${e.nombre}</div><div class="t">${tarifa}${casa}</div></div></div>`;
+    return `<div class="emp"><div><div class="n">${e.nombre}</div><div class="t">${tarifa}${casa}</div></div>
+            <button class="linkBtn" onclick="copiarLink('${e.id}', this)">🔗 Copiar link</button></div>`;
   }).join('');
 }
+
+window.copiarLink = (id, btn) => {
+  const url = new URL('fichar.html', location.href);
+  url.searchParams.set('empleada', id);
+  navigator.clipboard.writeText(url.toString());
+  const original = btn.textContent;
+  btn.textContent = '✅ Copiado';
+  setTimeout(()=>{ btn.textContent = original; }, 1500);
+};
 
 function traducir(m){
   if(/Invalid login/i.test(m)) return 'Email o contraseña incorrectos.';
