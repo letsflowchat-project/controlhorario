@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fichar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#15233B; --paper:#F4F3EE; --card:#FFFFFF;
+    --green:#198C66; --green-d:#0F6E50; --clay:#C75A33;
+    --muted:#7A8190; --line:#E7E5DD;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{font-family:'Inter',system-ui,sans-serif;background:var(--paper);color:var(--ink);
+       min-height:100vh;display:flex;justify-content:center}
+  .app{width:100%;max-width:440px;min-height:100vh;display:flex;flex-direction:column;
+       align-items:center;justify-content:center;padding:24px;text-align:center}
+  h1{font-size:22px;font-weight:800;letter-spacing:-.4px;margin-bottom:6px}
+  .sub{font-size:14px;color:var(--muted);font-weight:500;margin-bottom:28px}
+  .btn{width:100%;max-width:320px;aspect-ratio:1/1;border:none;border-radius:50%;
+       color:#fff;font-family:inherit;font-weight:800;font-size:30px;cursor:pointer;
+       display:flex;align-items:center;justify-content:center}
+  .btn.entrar{background:linear-gradient(180deg,var(--green),var(--green-d))}
+  .btn.salir{background:linear-gradient(180deg,var(--clay),#a8431f)}
+  .btn:disabled{opacity:.5;cursor:wait}
+  .msg{font-size:14.5px;font-weight:600;padding:18px 0;min-height:20px}
+  .msg.err{color:var(--clay)}
+  .msg.ok{color:var(--green-d)}
+  .estado{font-size:13px;color:var(--muted);font-weight:600;margin-top:18px}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <h1 id="titulo">Cargando…</h1>
+  <div class="sub" id="sub"></div>
+  <button class="btn entrar hide" id="btnAccion" style="display:none"></button>
+  <div class="msg" id="msg"></div>
+  <div class="estado" id="estado"></div>
+</div>
+
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+const SUPABASE_URL = 'https://ubxewgzsxsgbnteilsmr.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_GBcT8LGAtJjcXKH8u6yYfQ_HCEpdhzh';
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const RADIO_ZONA_METROS = 100;
+
+const $ = id => document.getElementById(id);
+const msg = (text, ok) => { const m=$('msg'); m.textContent=text; m.className='msg '+(ok?'ok':'err'); };
+
+const params = new URLSearchParams(location.search);
+const empleadaId = params.get('empleada');
+
+let empleada = null;
+let proximaAccion = null; // 'entrada' | 'salida'
+
+function distanciaMetros(lat1, lng1, lat2, lng2){
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2-lat1), dLng = toRad(lng2-lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+async function init(){
+  if(!empleadaId){
+    $('titulo').textContent = 'Link inválido';
+    $('sub').textContent = 'Falta el código de empleada en la dirección.';
+    return;
+  }
+
+  const { data: emp, error: e1 } = await sb.from('empleadas').select('*').eq('id', empleadaId).single();
+  if(e1 || !emp){
+    $('titulo').textContent = 'No te encontramos';
+    $('sub').textContent = 'Revisá el link con tu empleador.';
+    return;
+  }
+  empleada = emp;
+
+  const { data: ultimo } = await sb.from('fichajes')
+    .select('tipo,hora').eq('empleada_id', empleadaId)
+    .order('hora', { ascending:false }).limit(1).maybeSingle();
+
+  proximaAccion = (ultimo && ultimo.tipo === 'entrada') ? 'salida' : 'entrada';
+  pintarBoton();
+}
+
+function pintarBoton(){
+  const b = $('btnAccion');
+  b.style.display = 'flex';
+  if(proximaAccion === 'entrada'){
+    $('titulo').textContent = `Hola, ${empleada.nombre.split(' ')[0]}`;
+    $('sub').textContent = 'Tocá el botón cuando llegues.';
+    b.className = 'btn entrar';
+    b.textContent = 'ENTRÉ';
+  } else {
+    $('titulo').textContent = `Hola, ${empleada.nombre.split(' ')[0]}`;
+    $('sub').textContent = 'Tocá el botón cuando te vayas.';
+    b.className = 'btn salir';
+    b.textContent = 'SALÍ';
+  }
+  b.onclick = fichar;
+}
+
+async function obtenerUbicacion(){
+  return new Promise((resolve) => {
+    if(!navigator.geolocation){ resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      p => resolve({ lat:p.coords.latitude, lng:p.coords.longitude }),
+      () => resolve(null),
+      { timeout:8000 }
+    );
+  });
+}
+
+async function fichar(){
+  const btn = $('btnAccion');
+  btn.disabled = true;
+  msg('Marcando…', true);
+
+  const ubicacion = await obtenerUbicacion();
+  let lat=null, lng=null, enZona=null;
+  if(ubicacion){
+    lat = ubicacion.lat; lng = ubicacion.lng;
+    if(empleada.casa_lat != null && empleada.casa_lng != null){
+      const dist = distanciaMetros(lat, lng, empleada.casa_lat, empleada.casa_lng);
+      enZona = dist <= RADIO_ZONA_METROS;
+    }
+  }
+
+  const fichaje = { empleada_id: empleadaId, tipo: proximaAccion, lat, lng, en_zona: enZona };
+
+  if(proximaAccion === 'salida'){
+    const hoy = new Date().toISOString().slice(0,10);
+    const { data: tarifa } = await sb.from('tarifas')
+      .select('precio_hora,viatico_dia')
+      .eq('empleada_id', empleadaId)
+      .lte('vigente_desde', hoy)
+      .order('vigente_desde', { ascending:false })
+      .limit(1).maybeSingle();
+    if(tarifa){
+      fichaje.precio_hora_aplicado = tarifa.precio_hora;
+      fichaje.viatico_aplicado = tarifa.viatico_dia;
+    }
+  }
+
+  const { error } = await sb.from('fichajes').insert(fichaje);
+  btn.disabled = false;
+
+  if(error){
+    msg('No se pudo marcar. Probá de nuevo.');
+    console.error(error);
+    return;
+  }
+
+  if(enZona === false){
+    msg('Marcado ⚠️ (parece que no estás en la zona de la casa, no pasa nada, ya quedó avisado)', true);
+  } else {
+    msg(proximaAccion === 'entrada' ? '¡Entrada marcada!' : '¡Salida marcada!', true);
+  }
+
+  proximaAccion = (proximaAccion === 'entrada') ? 'salida' : 'entrada';
+  pintarBoton();
+}
+
+init();
+</script>
+</body>
+</html>
