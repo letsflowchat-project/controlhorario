@@ -216,9 +216,30 @@ async function cargarEmpleadas(){
     const tarifa = t ? `$${t.precio_hora}/h · viático $${t.viatico_dia}` : 'sin tarifa';
     const casa = e.casa_lat ? ' · 📍 casa fijada' : ' · sin ubicación';
     return `<div class="emp"><div><div class="n">${e.nombre}</div><div class="t">${tarifa}${casa}</div></div>
-            <button class="linkBtn" onclick="copiarLink('${e.id}', this)">🔗 Copiar link</button></div>`;
+            <div style="display:flex;gap:6px">
+              <button class="linkBtn" onclick="fijarUbicacion('${e.id}', this)">📍 Fijar ubicación</button>
+              <button class="linkBtn" onclick="copiarLink('${e.id}', this)">🔗 Copiar link</button>
+            </div></div>`;
   }).join('');
 }
+
+window.fijarUbicacion = (id, btn) => {
+  if(!navigator.geolocation){ msg('homeMsg','Tu dispositivo no permite ubicación.'); return; }
+  const original = btn.textContent;
+  btn.textContent = '📍 Ubicando…'; btn.disabled = true;
+  navigator.geolocation.getCurrentPosition(
+    async (p) => {
+      const { error } = await sb.from('empleadas')
+        .update({ casa_lat:p.coords.latitude, casa_lng:p.coords.longitude })
+        .eq('id', id);
+      btn.disabled = false; btn.textContent = original;
+      if(error){ msg('homeMsg', traducir(error.message)); return; }
+      msg('homeMsg','Ubicación de la casa actualizada.', true);
+      cargarEmpleadas();
+    },
+    () => { btn.disabled = false; btn.textContent = original; msg('homeMsg','No se pudo leer la ubicación (¿diste permiso?).'); }
+  );
+};
 
 window.copiarLink = (id, btn) => {
   const url = new URL('fichar.html', location.href);
