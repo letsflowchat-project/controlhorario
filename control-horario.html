@@ -39,10 +39,11 @@
   .msg{font-size:13.5px;font-weight:600;padding:10px 0;min-height:20px}
   .msg.err{color:var(--clay)}
   .msg.ok{color:var(--green-d)}
-  .emp{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;
-       margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
-  .emp .n{font-weight:700;font-size:16px}
-  .emp .t{font-size:13px;color:var(--muted);margin-top:2px}
+  .emp{background:var(--card);border:1.5px solid var(--line);border-radius:16px;padding:18px 18px;
+       margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;
+       box-shadow:0 1px 2px rgba(21,35,59,.04)}
+  .emp .n{font-weight:800;font-size:18px}
+  .emp .t{font-size:13.5px;color:var(--muted);margin-top:3px}
   .linkBtn{font-size:12.5px;font-weight:700;color:var(--ink);background:var(--paper);
        border:1px solid var(--line);border-radius:10px;padding:8px 10px;cursor:pointer;white-space:nowrap}
   .hide{display:none}
@@ -104,10 +105,12 @@
   <!-- ===== PANEL (logged in) ===== -->
   <div class="pad hide" id="viewHome">
     <h1>Tus empleadas</h1>
-    <div class="sub">Configurá tarifa y ubicación de la casa.</div>
+    <div class="sub">Tocá una empleada para ver su panel.</div>
     <div id="empList"></div>
 
-    <div class="card" style="margin-top:8px">
+    <button class="linkBtn" style="margin-top:6px" id="btnToggleAlta" onclick="toggleAltaEmpleada()">+ Agregar empleada</button>
+
+    <div class="card hide" id="formAlta" style="margin-top:10px">
       <div style="font-weight:800;margin-bottom:14px">Agregar empleada</div>
       <label>Nombre</label>
       <input id="nNombre" type="text" placeholder="ej. María">
@@ -304,6 +307,12 @@ window.capturarCasa = () => {
 };
 
 // ---- EMPLEADAS ----
+window.toggleAltaEmpleada = () => {
+  const abierto = !$('formAlta').classList.contains('hide');
+  $('formAlta').classList.toggle('hide', abierto);
+  $('btnToggleAlta').textContent = abierto ? '+ Agregar empleada' : '− Ocultar';
+};
+
 window.addEmpleada = async () => {
   const nombre=$('nNombre').value.trim();
   const precio=parseFloat($('nPrecio').value);
@@ -329,6 +338,7 @@ window.addEmpleada = async () => {
   $('btnAdd').disabled=false;
   msg('homeMsg','Empleada agregada.', true);
   cargarEmpleadas();
+  setTimeout(toggleAltaEmpleada, 800);
 };
 
 async function cargarEmpleadas(){
