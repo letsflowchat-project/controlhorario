@@ -156,23 +156,31 @@ const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let casaLat = null, casaLng = null;
 let currentUser = null;
+let currentView = 'auth'; // 'auth' | 'home' | 'panel'
 
 const $ = id => document.getElementById(id);
-const show = (auth) => {
-  $('viewAuth').classList.toggle('hide', auth);
-  $('viewHome').classList.toggle('hide', !auth);
-  $('btnOut').classList.toggle('hide', !auth);
+function render(){
+  $('viewAuth').classList.toggle('hide', currentView !== 'auth');
+  $('viewHome').classList.toggle('hide', currentView !== 'home');
+  $('viewPanel').classList.toggle('hide', currentView !== 'panel');
+  $('btnOut').classList.toggle('hide', currentView === 'auth');
   const brand = document.querySelector('.brand');
-  brand.textContent = (auth && currentUser) ? ('Hola, '+currentUser.email.split('@')[0]) : 'Control Horario';
-  if(auth) cargarEmpleadas();
+  brand.textContent = (currentView !== 'auth' && currentUser) ? ('Hola, '+currentUser.email.split('@')[0]) : 'Control Horario';
+  if(currentView === 'home') cargarEmpleadas();
+}
+// Reacciona a cambios de sesión (login/logout/token refresh al volver a la pestaña).
+// Si ya estábamos viendo el panel u home, un refresh de token no nos saca de ahí:
+// solo forzamos pantalla cuando hay un cambio real de logueado <-> no logueado.
+const show = (auth) => {
+  if(!auth){ currentView = 'auth'; }
+  else if(currentView === 'auth'){ currentView = 'home'; }
+  render();
 };
 const msg = (el, text, ok) => { const m=$(el); m.textContent=text; m.className='msg '+(ok?'ok':'err'); };
 
 // La fuente de verdad de la sesión: se actualiza sola en login/logout
 sb.auth.onAuthStateChange((_event, session) => {
   currentUser = session?.user || null;
-  const brand = document.querySelector('.brand');
-  brand.textContent = currentUser ? ('Hola, '+currentUser.email.split('@')[0]) : 'Control Horario';
   show(!!currentUser);
 });
 
@@ -307,8 +315,8 @@ const plata = (n) => '$' + Number(n).toLocaleString('es-AR', { minimumFractionDi
 window.verPanel = (id, nombre) => {
   panelEmpleadaId = id;
   $('panelNombre').textContent = nombre;
-  $('viewHome').classList.add('hide');
-  $('viewPanel').classList.remove('hide');
+  currentView = 'panel';
+  render();
   const ahora = new Date().toLocaleDateString('en-CA', { timeZone: TZ }); // YYYY-MM-DD
   $('panelMes').value = ahora.slice(0,7);
   $('mFecha').value = ahora;
@@ -316,8 +324,8 @@ window.verPanel = (id, nombre) => {
 };
 
 window.volverAHome = () => {
-  $('viewPanel').classList.add('hide');
-  $('viewHome').classList.remove('hide');
+  currentView = 'home';
+  render();
   panelEmpleadaId = null;
 };
 
