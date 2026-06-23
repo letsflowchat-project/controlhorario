@@ -62,16 +62,42 @@
 
   <!-- ===== LOGIN ===== -->
   <div class="pad hide" id="viewAuth">
-    <h1>Ingresar</h1>
-    <div class="sub">Entrá con tu email para administrar.</div>
-    <div class="card">
-      <label>Email</label>
-      <input id="email" type="email" placeholder="tu@email.com" autocomplete="email">
-      <label>Contraseña</label>
-      <input id="pass" type="password" placeholder="••••••••" autocomplete="current-password">
-      <button class="btn" id="btnLogin" onclick="login()">Entrar</button>
-      <button class="btn ghost" onclick="signup()">Crear cuenta</button>
-      <div class="msg" id="authMsg"></div>
+    <div id="authLogin">
+      <h1>Ingresar</h1>
+      <div class="sub">Entrá con tu email para administrar.</div>
+      <div class="card">
+        <label>Email</label>
+        <input id="email" type="email" placeholder="tu@email.com" autocomplete="email">
+        <label>Contraseña</label>
+        <input id="pass" type="password" placeholder="••••••••" autocomplete="current-password">
+        <button class="btn" id="btnLogin" onclick="login()">Entrar</button>
+        <button class="btn ghost" onclick="signup()">Crear cuenta</button>
+        <button class="linkBtn" style="margin-top:10px" onclick="mostrarRecuperar()">¿Olvidaste tu contraseña?</button>
+        <div class="msg" id="authMsg"></div>
+      </div>
+    </div>
+
+    <div class="hide" id="authRecuperar">
+      <h1>Recuperar contraseña</h1>
+      <div class="sub">Te mandamos un link a tu email para elegir una nueva.</div>
+      <div class="card">
+        <label>Email</label>
+        <input id="recEmail" type="email" placeholder="tu@email.com">
+        <button class="btn" onclick="enviarRecuperacion()">Mandar link</button>
+        <button class="btn ghost" onclick="mostrarLogin()">Volver</button>
+        <div class="msg" id="recMsg"></div>
+      </div>
+    </div>
+
+    <div class="hide" id="authNuevaClave">
+      <h1>Nueva contraseña</h1>
+      <div class="sub">Llegaste desde el link del email. Elegí tu nueva contraseña.</div>
+      <div class="card">
+        <label>Contraseña nueva</label>
+        <input id="nuevaClave" type="password" placeholder="••••••••">
+        <button class="btn" onclick="guardarNuevaClave()">Guardar</button>
+        <div class="msg" id="nuevaClaveMsg"></div>
+      </div>
     </div>
   </div>
 
@@ -192,9 +218,43 @@ const show = (auth) => {
 };
 const msg = (el, text, ok) => { const m=$(el); m.textContent=text; m.className='msg '+(ok?'ok':'err'); };
 
+window.mostrarRecuperar = () => {
+  $('authLogin').classList.add('hide'); $('authNuevaClave').classList.add('hide');
+  $('authRecuperar').classList.remove('hide');
+};
+window.mostrarLogin = () => {
+  $('authRecuperar').classList.add('hide'); $('authNuevaClave').classList.add('hide');
+  $('authLogin').classList.remove('hide');
+};
+function mostrarNuevaClave(){
+  $('authLogin').classList.add('hide'); $('authRecuperar').classList.add('hide');
+  $('authNuevaClave').classList.remove('hide');
+}
+
+window.enviarRecuperacion = async () => {
+  const email = $('recEmail').value.trim();
+  if(!email){ msg('recMsg','Completá tu email.'); return; }
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname });
+  if(error){ msg('recMsg', traducir(error.message)); return; }
+  msg('recMsg','Listo, revisá tu email y tocá el link de ahí.', true);
+};
+
+window.guardarNuevaClave = async () => {
+  const password = $('nuevaClave').value;
+  if(!password || password.length < 6){ msg('nuevaClaveMsg','Mínimo 6 caracteres.'); return; }
+  const { error } = await sb.auth.updateUser({ password });
+  if(error){ msg('nuevaClaveMsg', traducir(error.message)); return; }
+  msg('nuevaClaveMsg','Contraseña actualizada.', true);
+  setTimeout(()=>{ mostrarLogin(); show(true); }, 1000);
+};
+
 // La fuente de verdad de la sesión: se actualiza sola en login/logout
-sb.auth.onAuthStateChange((_event, session) => {
+sb.auth.onAuthStateChange((event, session) => {
   currentUser = session?.user || null;
+  if(event === 'PASSWORD_RECOVERY'){
+    currentView = 'auth'; render(); mostrarNuevaClave();
+    return;
+  }
   show(!!currentUser);
 });
 
