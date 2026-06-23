@@ -105,17 +105,31 @@
   <div class="pad hide" id="viewPanel">
     <button class="linkBtn" style="margin-bottom:14px" onclick="volverAHome()">← Volver</button>
     <h1 id="panelNombre">—</h1>
-    <input type="month" id="panelMes" style="margin-bottom:18px">
+
+    <div id="filtroMes">
+      <input type="month" id="panelMes">
+    </div>
+    <div id="filtroRango" class="row hide">
+      <div><label>Desde</label><input type="date" id="panelDesde"></div>
+      <div><label>Hasta</label><input type="date" id="panelHasta"></div>
+    </div>
+    <button class="linkBtn" id="btnToggleRango" onclick="toggleRangoPersonalizado()" style="margin-bottom:18px">📅 Usar fechas personalizadas</button>
 
     <div class="card" id="panelTotales"></div>
 
     <div class="card" style="margin-top:8px">
-      <div style="font-weight:800;margin-bottom:14px">Días trabajados</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-weight:800">Días trabajados</div>
+        <button class="linkBtn" onclick="exportarDiasCSV()">⬇️ CSV</button>
+      </div>
       <div id="panelDias"><div class="sub">Cargando…</div></div>
     </div>
 
     <div class="card" style="margin-top:8px">
-      <div style="font-weight:800;margin-bottom:14px">Movimientos del mes</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-weight:800">Movimientos</div>
+        <button class="linkBtn" onclick="exportarMovimientosCSV()">⬇️ CSV</button>
+      </div>
       <div id="panelMovs"></div>
     </div>
 
@@ -329,11 +343,36 @@ window.volverAHome = () => {
   panelEmpleadaId = null;
 };
 
+let usarRango = false;
+window.toggleRangoPersonalizado = () => {
+  usarRango = !usarRango;
+  $('filtroMes').classList.toggle('hide', usarRango);
+  $('filtroRango').classList.toggle('hide', !usarRango);
+  $('btnToggleRango').textContent = usarRango ? '🗓️ Usar mes calendario' : '📅 Usar fechas personalizadas';
+  if(usarRango && !$('panelDesde').value){
+    const ahora = new Date().toLocaleDateString('en-CA', { timeZone: TZ });
+    $('panelDesde').value = ahora.slice(0,8)+'01';
+    $('panelHasta').value = ahora;
+  }
+  cargarPanel();
+};
+
 $('panelMes').addEventListener('change', cargarPanel);
+$('panelDesde').addEventListener('change', cargarPanel);
+$('panelHasta').addEventListener('change', cargarPanel);
+
+let ultimosJornadas = [];
+
+function dentroDelFiltro(diaISO){
+  if(usarRango){
+    const desde = $('panelDesde').value, hasta = $('panelHasta').value;
+    return (!desde || diaISO >= desde) && (!hasta || diaISO <= hasta);
+  }
+  return diaISO.startsWith($('panelMes').value);
+}
 
 async function cargarPanel(){
   if(!panelEmpleadaId) return;
-  const mes = $('panelMes').value; // "2026-06"
 
   const [{ data:fichajes, error:e1 }, { data:movs, error:e2 }] = await Promise.all([
     sb.from('fichajes').select('*').eq('empleada_id', panelEmpleadaId).order('hora'),
@@ -352,8 +391,9 @@ async function cargarPanel(){
   }
   const abierta = pendiente; // jornada sin cerrar (trabajando ahora)
 
-  const jornadasMes = jornadas.filter(j => claveDiaAR(j.entrada.hora).startsWith(mes));
-  const movsMes = movs.filter(m => (m.fecha||'').startsWith(mes));
+  const jornadasMes = jornadas.filter(j => dentroDelFiltro(claveDiaAR(j.entrada.hora)));
+  const movsMes = movs.filter(m => dentroDelFiltro(m.fecha||''));
+  ultimosJornadas = jornadasMes;
 
   let horasTotales = 0, viaticoTotal = 0, montoTrabajo = 0;
   const filasDias = jornadasMes.map(j => {
@@ -448,6 +488,38 @@ window.eliminarMovimiento = async (id) => {
   if(error){ msg('movMsg', traducir(error.message)); return; }
   if(editandoMovId === id) cancelarEdicionMovimiento();
   cargarPanel();
+};
+
+// ---- EXPORTAR CSV ----
+function descargarCSV(filename, headers, rows){
+  const escapar = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
+  const csv = [headers, ...rows].map(r => r.map(escapar).join(',')).join('\r\n');
+  const blob = new Blob(['﻿'+csv], { type:'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+window.exportarDiasCSV = () => {
+  const nombre = $('panelNombre').textContent.replace(/\s+/g,'_');
+  const rows = ultimosJornadas.map(j => {
+    const horas = (new Date(j.salida.hora) - new Date(j.entrada.hora)) / 3600000;
+    const precio = Number(j.salida.precio_hora_aplicado) || 0;
+    const viatico = Number(j.salida.viatico_aplicado) || 0;
+    const monto = horas*precio + viatico;
+    const fueraZona = (j.entrada.en_zona === false || j.salida.en_zona === false);
+    return [claveDiaAR(j.entrada.hora), horaCorta(j.entrada.hora), horaCorta(j.salida.hora),
+             horas.toFixed(2), precio, viatico, monto.toFixed(2), fueraZona ? 'sí' : 'no'];
+  });
+  descargarCSV(`dias_${nombre}.csv`,
+    ['Fecha','Entrada','Salida','Horas','Precio/hora','Viático','Monto','Fuera de zona'], rows);
+};
+
+window.exportarMovimientosCSV = () => {
+  const nombre = $('panelNombre').textContent.replace(/\s+/g,'_');
+  const rows = ultimosMovs.map(m => [m.fecha, m.tipo, m.monto, m.nota || '']);
+  descargarCSV(`movimientos_${nombre}.csv`, ['Fecha','Tipo','Monto','Nota'], rows);
 };
 
 function traducir(m){
