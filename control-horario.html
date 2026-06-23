@@ -377,11 +377,17 @@ async function cargarPanel(){
   const viaticoExtra = sumPorTipo('viatico');
   const saldo = montoTrabajo + viaticoExtra - adelantos - pagos;
 
+  ultimosMovs = movsMes;
   $('panelMovs').innerHTML = movsMes.length ? movsMes.map(m => `
     <div class="emp"><div>
       <div class="n">${({adelanto:'Adelanto',pago:'Pago',viatico:'Viático extra'})[m.tipo]}</div>
       <div class="t">${m.fecha} ${m.nota ? '· '+m.nota : ''}</div>
-    </div><div class="n">${plata(m.monto)}</div></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="n">${plata(m.monto)}</div>
+      <button class="linkBtn" onclick="editarMovimiento('${m.id}')">✏️</button>
+      <button class="linkBtn" onclick="eliminarMovimiento('${m.id}')">🗑️</button>
+    </div></div>
   `).join('') : '<div class="sub">Sin movimientos este mes.</div>';
 
   $('panelTotales').innerHTML = `
@@ -394,6 +400,9 @@ async function cargarPanel(){
   `;
 }
 
+let ultimosMovs = [];
+let editandoMovId = null;
+
 window.addMovimiento = async () => {
   const tipo = $('mTipo').value;
   const monto = parseFloat($('mMonto').value);
@@ -403,13 +412,41 @@ window.addMovimiento = async () => {
 
   const { data:{ user } } = await sb.auth.getUser();
   $('btnMov').disabled = true;
-  const { error } = await sb.from('movimientos')
-    .insert({ empleada_id:panelEmpleadaId, empleador_id:user.id, tipo, monto, fecha, nota });
+  const datos = { empleada_id:panelEmpleadaId, empleador_id:user.id, tipo, monto, fecha, nota };
+  const { error } = editandoMovId
+    ? await sb.from('movimientos').update(datos).eq('id', editandoMovId)
+    : await sb.from('movimientos').insert(datos);
   $('btnMov').disabled = false;
   if(error){ msg('movMsg', traducir(error.message)); return; }
 
+  cancelarEdicionMovimiento();
+  msg('movMsg', editandoMovId ? 'Movimiento actualizado.' : 'Movimiento guardado.', true);
+  cargarPanel();
+};
+
+window.editarMovimiento = (id) => {
+  const m = ultimosMovs.find(x => x.id === id);
+  if(!m) return;
+  editandoMovId = id;
+  $('mTipo').value = m.tipo;
+  $('mMonto').value = m.monto;
+  $('mFecha').value = m.fecha;
+  $('mNota').value = m.nota || '';
+  $('btnMov').textContent = 'Actualizar movimiento';
+  $('btnMov').scrollIntoView({ behavior:'smooth', block:'center' });
+};
+
+function cancelarEdicionMovimiento(){
+  editandoMovId = null;
   $('mMonto').value=''; $('mNota').value='';
-  msg('movMsg','Movimiento guardado.', true);
+  $('btnMov').textContent = 'Guardar movimiento';
+}
+
+window.eliminarMovimiento = async (id) => {
+  if(!confirm('¿Eliminar este movimiento?')) return;
+  const { error } = await sb.from('movimientos').delete().eq('id', id);
+  if(error){ msg('movMsg', traducir(error.message)); return; }
+  if(editandoMovId === id) cancelarEdicionMovimiento();
   cargarPanel();
 };
 
