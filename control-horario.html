@@ -412,6 +412,15 @@ window.copiarLink = (id, btn) => {
 const TZ = 'America/Argentina/Buenos_Aires';
 let panelEmpleadaId = null;
 
+function distanciaMetros(lat1, lng1, lat2, lng2){
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2-lat1), dLng = toRad(lng2-lng1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+window.toggleDetalleDia = (i) => $(`detalleDia${i}`).classList.toggle('hide');
+
 const claveDiaAR = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: TZ }); // YYYY-MM-DD
 const fechaCorta = (iso) => new Date(iso).toLocaleDateString('es-AR', { timeZone: TZ, day:'2-digit', month:'2-digit' });
 const horaCorta  = (iso) => new Date(iso).toLocaleTimeString('es-AR', { timeZone: TZ, hour:'2-digit', minute:'2-digit' });
@@ -465,11 +474,22 @@ function dentroDelFiltro(diaISO){
 async function cargarPanel(){
   if(!panelEmpleadaId) return;
 
-  const [{ data:fichajes, error:e1 }, { data:movs, error:e2 }] = await Promise.all([
+  const [{ data:emp, error:e0 }, { data:fichajes, error:e1 }, { data:movs, error:e2 }] = await Promise.all([
+    sb.from('empleadas').select('casa_lat,casa_lng').eq('id', panelEmpleadaId).single(),
     sb.from('fichajes').select('*').eq('empleada_id', panelEmpleadaId).order('hora'),
     sb.from('movimientos').select('*').eq('empleada_id', panelEmpleadaId).order('fecha')
   ]);
-  if(e1 || e2){ $('panelDias').innerHTML = '<div class="sub">Error al cargar.</div>'; return; }
+  if(e0 || e1 || e2){ $('panelDias').innerHTML = '<div class="sub">Error al cargar.</div>'; return; }
+
+  const casaLatPanel = emp.casa_lat, casaLngPanel = emp.casa_lng;
+  const distanciaDe = (f) => (f.lat != null && f.lng != null && casaLatPanel != null && casaLngPanel != null)
+    ? Math.round(distanciaMetros(f.lat, f.lng, casaLatPanel, casaLngPanel)) : null;
+  const detalleZona = (f) => {
+    if(f.en_zona === null || f.en_zona === undefined) return 'sin datos de ubicación';
+    if(f.en_zona) return '✅ en zona';
+    const d = distanciaDe(f);
+    return d != null ? `⚠️ fuera (a ${d}m)` : '⚠️ fuera de zona';
+  };
 
   // Emparejar entrada/salida en jornadas
   const jornadas = [];
@@ -487,17 +507,22 @@ async function cargarPanel(){
   ultimosJornadas = jornadasMes;
 
   let horasTotales = 0, viaticoTotal = 0, montoTrabajo = 0;
-  const filasDias = jornadasMes.map(j => {
+  const filasDias = jornadasMes.map((j, i) => {
     const horas = (new Date(j.salida.hora) - new Date(j.entrada.hora)) / 3600000;
     const precio = Number(j.salida.precio_hora_aplicado) || 0;
     const viatico = Number(j.salida.viatico_aplicado) || 0;
     const monto = horas*precio + viatico;
     horasTotales += horas; viaticoTotal += viatico; montoTrabajo += monto;
     const fueraZona = (j.entrada.en_zona === false || j.salida.en_zona === false);
-    return `<div class="emp"><div>
-              <div class="n">${fechaCorta(j.entrada.hora)} ${fueraZona ? '🟡' : ''}</div>
-              <div class="t">${horaCorta(j.entrada.hora)} – ${horaCorta(j.salida.hora)} · ${horas.toFixed(1)}h · ${plata(monto)}</div>
-            </div></div>`;
+    return `<div class="emp" style="cursor:pointer;flex-direction:column;align-items:stretch" onclick="toggleDetalleDia(${i})">
+              <div style="display:flex;justify-content:space-between;width:100%">
+                <div>
+                  <div class="n">${fechaCorta(j.entrada.hora)} ${fueraZona ? '🟡' : ''}</div>
+                  <div class="t">${horaCorta(j.entrada.hora)} – ${horaCorta(j.salida.hora)} · ${horas.toFixed(1)}h · ${plata(monto)}</div>
+                </div>
+              </div>
+              <div class="t hide" id="detalleDia${i}" style="margin-top:8px">Entrada ${detalleZona(j.entrada)} · Salida ${detalleZona(j.salida)}</div>
+            </div>`;
   }).join('') || '<div class="sub">Sin días en este mes.</div>';
 
   $('panelDias').innerHTML = filasDias + (abierta ? `<div class="sub" style="margin-top:8px">🟢 Trabajando ahora desde las ${horaCorta(abierta.hora)}</div>` : '');
